@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <time.h>
+#include <math.h> // Include math.h for pi -> used in sin function for calculating brightness 
 #include <HTTPClient.h>
 #include <WiFiUdp.h>
 
@@ -33,7 +34,7 @@ String weatherURL = "https://api.sunrisesunset.io/json?lat=" + String(LATITUDE, 
 unsigned int dawn, sunrise, sunset, dusk, noon, goldenHourMorning, goldenHourNight, currentTime;
 // Floats to store the ratios of how far between important time markers are. e.g. Dawn[--------|--]Sunrise means the current time is 80% of the through the dawn-sunrise cycle
 float currentTimeProgress, goldenHourProgress;
-// const int TIME_OFFSET = -21600;
+const int TIME_OFFSET = -21600;
 
 // ---------------------------------------------------------------------------------------------
 
@@ -162,62 +163,48 @@ void updateLightColor(){
   }
 }
 
-
-// This function calculates what time range the current time resides in (e.g. between sunrise and noon) and sets the LEDs brightness and color accordingly.
 void updateLights(){
 // if beween dawn and sunrise
   currentTime = getCurrentTime();
-  if(currentTime >= dawn && currentTime < sunrise){
-    currentTimeProgress = float(currentTime - dawn) / float(sunrise - dawn);
-    // The current brighness will be the progress from dawn to sunrise as a percentage time the max brightness for this period (20)
-    ledBrightness = floor(currentTimeProgress * 30);
-    ledColor = 0;
-    // updateLightColor();
-  }
-  // If between sunrise and noon
-  else if(currentTime >= sunrise && currentTime < noon){
-    currentTimeProgress = float(currentTime - sunrise) / float(noon - sunrise);
-    // The brightness for this step will be the 20% brightness from sunrise, and the percentage between sunrise and noon times the difference (60)
-    ledBrightness = 30 + floor(currentTimeProgress * 50);
-    // ledColor = 255;
-    // If its golden hour (MORNING), transition the lights from orange to white
-    if(currentTime <= goldenHourMorning){
-      goldenHourProgress = float(currentTime - sunrise) / float(goldenHourMorning - sunrise);
-      ledColor = floor(goldenHourProgress * 255);
-      // updateLightColor();
-    }
-  }
-  // if between noon and sunset
-  else if(currentTime >= noon && currentTime < sunset){
-    currentTimeProgress = float(currentTime - noon) / float(sunset - noon);
-    ledBrightness = 80 - floor(currentTimeProgress * 50);
-    // If its golden hour (NIGHT), transition the lights from white to orange
-    if(currentTime >= goldenHourNight){
-      // Reducing from 100% to 0% so (1 - progress) * maxvalue.
-      goldenHourProgress = 1.0 - (float(currentTime - goldenHourNight) / float(sunset - goldenHourNight));
-      ledColor = floor(goldenHourProgress * 255);
-      // updateLightColor();
-    }
-  }
-  // if between sunset and dusk.
-  else if(currentTime >= sunset && currentTime < dusk){
-    currentTimeProgress = float(currentTime - sunset) / float(dusk - sunset);
-    ledBrightness = 30 - floor(currentTimeProgress * 30);
-    ledColor = 0;
-    // updateLightColor();
-  }
-  // All cases should be handled above, keeping this here just in case lol
-  else if(currentTime >= dusk || currentTime < dawn){ // If it's nighttime, then the lights are off and the color is preset to the base orange
+  // If it's night, lights will be off.
+  if(currentTime < dawn || currentTime > dusk){
     ledBrightness = 0;
     ledColor = 0;
-    // Serial.println("LED COLOR: ");
-    // Serial.println(ledColor);
+  }
+  // If it's day, calculate the brightness of the lights as brightness = sin(currentTime). (Normalize first)
+  else{
+    float x = M_PI * float(currentTime - dawn) / float(dusk - dawn); // Set up the current time as a "progress" between 0 and pi.
+    float brightnessSin = sin(x); // The peak of the sin graph will be noon, where y = 1.
+    ledBrightness = int(brightnessSin * 100); // Max brightness value is 100. brightnessSin represents the current percentage of the max brightness.
+  }
+
+
+
+  // If its golden hour (MORNING), transition the lights from orange to white
+  if(currentTime > dawn && currentTime < goldenHourMorning){
+    goldenHourProgress = float(currentTime - sunrise) / float(goldenHourMorning - sunrise);
+    ledColor = floor(goldenHourProgress * 255);
+    if(ledColor > 255){
+      ledColor = 255;
+    }
     // updateLightColor();
+  }
+  else if(currentTime > goldenHourNight && currentTime < dusk){
+      // Reducing from 100% to 0% so (1 - progress) * maxvalue.
+      goldenHourProgress = float(currentTime - goldenHourNight) / float(sunset - goldenHourNight);
+      ledColor = 255.0 - floor(goldenHourProgress * 255.0);
+       if(ledColor < 0){
+        ledColor = 0;
+      }
+      // updateLightColor();
+    
   }
   updateLightColor();
   FastLED.setBrightness(ledBrightness);
   FastLED.show();
+  
 }
+
 
 void setup() {
   // Initialize Serial Monitor
@@ -244,9 +231,9 @@ void loop() {
   struct tm refreshTime; 
   if (getLocalTime(&refreshTime)) {
     // If the current time is 6:01 AM and the data hasn't been retrieved for the new day, then we will update the date data from the API.
-    if (refreshTime.tm_hour == 1 && refreshTime.tm_min == 1) { 
+    if ((refreshTime.tm_hour == 6 || refreshTime.tm_hour == 1 || refreshTime.tm_hour == 12) && refreshTime.tm_min == 1) { 
       if (!alreadyReceivedTodaysData) {
-
+        
         alreadyReceivedTodaysData = true;
 
         // Get the dateData for the new day
