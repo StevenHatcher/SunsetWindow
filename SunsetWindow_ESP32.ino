@@ -91,18 +91,6 @@ void disconnectWifi() {
   Serial.println("Wi-Fi disconnected.");
 }
 
-void printCurrentTimeHHMMSS() {
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) {
-    Serial.println("Failed to obtain time");
-    return;
-  }
-
-  char timeStr[9]; // "HH:MM:SS" + null terminator
-  strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
-  Serial.println(timeStr);
-}
-
 
 // This function Retrieves todays dawn, sunrise, sunset, and dusk times from https://sunrisesunset.io/api/
 // Parses the json and stores important times in global variables
